@@ -1,5 +1,7 @@
 import os
 import re
+import time
+import subprocess
 import feedparser
 import requests
 import cloudinary
@@ -12,7 +14,7 @@ import imageio_ffmpeg
 load_dotenv()
 
 # ================= 1. CONFIGURATION =================
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 BUFFER_TOKEN = os.getenv("BUFFER_TOKEN", "8AQRlm4byqWtbn0HoCQwDn5odC4Ui14pb-BiMbMGScz")
 
 CHANNEL_IDS = [
@@ -30,16 +32,34 @@ cloudinary.config(
 client = Groq(api_key=GROQ_API_KEY)
 TRACKER_FILE = "posted_links.txt"
 
-# Expanded News Feeds (Shorts playlists & channel uploads)
 YOUTUBE_SHORTS_FEEDS = [
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC Shorts
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC News Shorts
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg Shorts
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UCknLrEdhRCp1aegoMqRaCZg",       # DW News
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UC_gUM8rL-Lzy6ZRv9SvwGWA",       # ABC News
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UCEAZeUIeJs0IjQiqTCdVSIg",       # Yahoo Finance
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UC52X5EvzScZSjL20StL2NwA"        # Reuters
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHknLrEdhRCp1aegoMqRaCZg",  # DW News
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_gUM8rL-Lzy6ZRv9SvwGWA",  # ABC News
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH5d_FhUa3kPqmGkGg5b2g",    # WION
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHCEAZeUIeJs0IjQiqTCdVSIg"   # Yahoo Finance
 ]
+
+# Helper function to convert any video into 100% Instagram-ready 9:16 Reel
+def convert_to_instagram_reel(input_file, output_file):
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    # Scales to 1080x1920 vertical with black padding if needed, enforces yuv420p and aac
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-i", input_file,
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-ar", "44100",
+        "-movflags", "+faststart",
+        output_file
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 # ================= 2. FETCH LATEST SHORT NEWS VIDEO =================
 def get_latest_news_short():
@@ -48,12 +68,13 @@ def get_latest_news_short():
         with open(TRACKER_FILE, "r", encoding="utf-8") as f:
             posted_links = set(line.strip() for line in f if line.strip())
 
-    output_path = "news_video.mp4"
+    raw_path = "raw_download.mp4"
+    final_reel_path = "news_video.mp4"
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
     ydl_opts = {
         'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': output_path,
+        'outtmpl': raw_path,
         'ffmpeg_location': ffmpeg_exe,
         'merge_output_format': 'mp4',
         'quiet': True,
@@ -64,37 +85,37 @@ def get_latest_news_short():
     for feed_url in YOUTUBE_SHORTS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:8]:  # Har channel ki top 8 videos check karega
+            for entry in feed.entries[:8]:
                 video_url = entry.link
                 if video_url not in posted_links:
-                    print(f"\nChecking candidate: {entry.title}\nURL: {video_url}")
+                    print(f"\nTargeting: {entry.title}\nURL: {video_url}")
 
-                    if os.path.exists(output_path):
-                        try:
-                            os.remove(output_path)
-                        except Exception:
-                            pass
+                    for f in [raw_path, final_reel_path]:
+                        if os.path.exists(f):
+                            try:
+                                os.remove(f)
+                            except Exception:
+                                pass
 
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([video_url])
-                    except Exception as dl_err:
-                        print(f"Skipped (Not a short or download error), checking next...")
+                    except Exception:
                         continue
 
-                    # Confirm video file exists and is valid
-                    if os.path.exists(output_path) and os.path.getsize(output_path) > 20000:
+                    if os.path.exists(raw_path) and os.path.getsize(raw_path) > 15000:
+                        print("Converting video to standard Instagram 9:16 vertical Reel...")
+                        convert_to_instagram_reel(raw_path, final_reel_path)
+                        
                         with open(TRACKER_FILE, "a", encoding="utf-8") as f:
                             f.write(video_url + "\n")
 
                         title = entry.title
                         description = getattr(entry, "summary", title)
-                        return title, description, video_url, output_path
+                        return title, description, video_url, final_reel_path
         except Exception as e:
-            print(f"[Notice] Feed error: {e}")
             continue
 
-    print("Koi nayi valid short video nahi mili. Agle cycle me dobara try hoga.")
     return None, None, None, None
 
 # ================= 3. AI CAPTION GENERATION =================
@@ -111,7 +132,7 @@ def generate_ai_caption(title, description):
 
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
-        model="openai/gpt-oss-120b",
+        model="openai/gpt-oss-20b",
         temperature=0.7,
     )
 
@@ -119,8 +140,11 @@ def generate_ai_caption(title, description):
 
 # ================= 4. BUFFER GRAPHQL VIDEO PUBLISH =================
 def publish_to_buffer(video_path, caption):
-    print("Uploading real news video to Cloudinary...")
-    upload_res = cloudinary.uploader.upload(video_path, resource_type="video")
+    print("Uploading standardized Reel to Cloudinary...")
+    upload_res = cloudinary.uploader.upload(
+        video_path,
+        resource_type="video"
+    )
     video_url = upload_res["secure_url"]
     print(f"Uploaded Video URL: {video_url}")
 
@@ -174,18 +198,18 @@ def publish_to_buffer(video_path, caption):
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    print("[1/3] Searching and downloading latest verified News Short/Reel...")
+    print("[1/3] Searching, downloading and standardizing News Reel...")
     title, desc, url, video_file = get_latest_news_short()
 
     if video_file:
-        print(f"Successfully Downloaded: {title}")
+        print(f"Standardized Reel Ready: {title}")
 
         print("[2/3] Generating AI caption with Groq...")
         caption = generate_ai_caption(title, desc)
-        print("Caption generated.")
+        print("Caption generated successfully.")
 
         print("[3/3] Uploading & publishing video to platforms...")
         publish_to_buffer(video_file, caption)
         print("\nReal news video published successfully!")
     else:
-        print("Done. No new videos to publish in this run.")
+        print("Done. No new videos found in this cycle.")
