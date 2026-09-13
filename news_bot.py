@@ -30,11 +30,15 @@ cloudinary.config(
 client = Groq(api_key=GROQ_API_KEY)
 TRACKER_FILE = "posted_links.txt"
 
-# Official Shorts Playlists
+# Expanded News Feeds (Shorts playlists & channel uploads)
 YOUTUBE_SHORTS_FEEDS = [
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC News
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA"   # Bloomberg
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC Shorts
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC News Shorts
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg Shorts
+    "https://www.youtube.com/feeds/videos.xml?channel_id=UCknLrEdhRCp1aegoMqRaCZg",       # DW News
+    "https://www.youtube.com/feeds/videos.xml?channel_id=UC_gUM8rL-Lzy6ZRv9SvwGWA",       # ABC News
+    "https://www.youtube.com/feeds/videos.xml?channel_id=UCEAZeUIeJs0IjQiqTCdVSIg",       # Yahoo Finance
+    "https://www.youtube.com/feeds/videos.xml?channel_id=UC52X5EvzScZSjL20StL2NwA"        # Reuters
 ]
 
 # ================= 2. FETCH LATEST SHORT NEWS VIDEO =================
@@ -52,7 +56,7 @@ def get_latest_news_short():
         'outtmpl': output_path,
         'ffmpeg_location': ffmpeg_exe,
         'merge_output_format': 'mp4',
-        'quiet': False,
+        'quiet': True,
         'noplaylist': True,
         'match_filter': yt_dlp.utils.match_filter_func("duration <= 90")
     }
@@ -60,10 +64,10 @@ def get_latest_news_short():
     for feed_url in YOUTUBE_SHORTS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
-            for entry in feed.entries:
+            for entry in feed.entries[:8]:  # Har channel ki top 8 videos check karega
                 video_url = entry.link
                 if video_url not in posted_links:
-                    print(f"\nTargeting: {entry.title}\nURL: {video_url}")
+                    print(f"\nChecking candidate: {entry.title}\nURL: {video_url}")
 
                     if os.path.exists(output_path):
                         try:
@@ -75,10 +79,11 @@ def get_latest_news_short():
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([video_url])
                     except Exception as dl_err:
-                        print(f"Skipped ({dl_err}), trying next video...")
+                        print(f"Skipped (Not a short or download error), checking next...")
                         continue
 
-                    if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+                    # Confirm video file exists and is valid
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 20000:
                         with open(TRACKER_FILE, "a", encoding="utf-8") as f:
                             f.write(video_url + "\n")
 
@@ -89,7 +94,8 @@ def get_latest_news_short():
             print(f"[Notice] Feed error: {e}")
             continue
 
-    raise Exception("Koi nayi valid short video nahi mili. Thodi der me dobara try karein.")
+    print("Koi nayi valid short video nahi mili. Agle cycle me dobara try hoga.")
+    return None, None, None, None
 
 # ================= 3. AI CAPTION GENERATION =================
 def generate_ai_caption(title, description):
@@ -170,12 +176,16 @@ def publish_to_buffer(video_path, caption):
 if __name__ == "__main__":
     print("[1/3] Searching and downloading latest verified News Short/Reel...")
     title, desc, url, video_file = get_latest_news_short()
-    print(f"Successfully Downloaded: {title}")
 
-    print("[2/3] Generating AI caption with Groq...")
-    caption = generate_ai_caption(title, desc)
-    print("Caption generated.")
+    if video_file:
+        print(f"Successfully Downloaded: {title}")
 
-    print("[3/3] Uploading & publishing video to platforms...")
-    publish_to_buffer(video_file, caption)
-    print("\nReal news video published successfully!")
+        print("[2/3] Generating AI caption with Groq...")
+        caption = generate_ai_caption(title, desc)
+        print("Caption generated.")
+
+        print("[3/3] Uploading & publishing video to platforms...")
+        publish_to_buffer(video_file, caption)
+        print("\nReal news video published successfully!")
+    else:
+        print("Done. No new videos to publish in this run.")
