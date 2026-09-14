@@ -17,10 +17,11 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 BUFFER_TOKEN = os.getenv("BUFFER_TOKEN", "8AQRlm4byqWtbn0HoCQwDn5odC4Ui14pb-BiMbMGScz")
 
-CHANNEL_IDS = [
-    "6aa38c78cd8b9c702c4a94c0",  # Instagram
-    "6aa39a63cd8b9c702c4b0364",  # LinkedIn
-    "6aa39a25cd8b9c702c4affd3"   # Threads
+# Verified Active Channels
+CHANNELS = [
+    {"id": "6aa773e0ea19ca0bde3b44fb", "type": "instagram"},
+    {"id": "6aa773f7ea19ca0bde3b4560", "type": "threads"},
+    {"id": "6aa39a63cd8b9c702c4b0364", "type": "linkedin"}
 ]
 
 cloudinary.config(
@@ -32,20 +33,41 @@ cloudinary.config(
 client = Groq(api_key=GROQ_API_KEY)
 TRACKER_FILE = "posted_links.txt"
 
+# 16 Curated Feeds (Top Sports + Tech + Gaming + World & Finance)
 YOUTUBE_SHORTS_FEEDS = [
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg
+    # Top 3 Sports
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHUC_qpnwG7B1W4s8T-mZ6lg",  # ESPN
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHtm_QoN2HKbe3S6FVNT7Qzg",  # Formula 1
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHUPi2Fz9b22z1Qv2d1n9wDg",  # Sky Sports Football
+
+    # Global Breaking News
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC News
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHupvZG-5ko_eiXAupbDfxWw",  # CNN
     "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHknLrEdhRCp1aegoMqRaCZg",  # DW News
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_gUM8rL-Lzy6ZRv9SvwGWA",  # ABC News
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH7fPtJkH31N4mE_yO8oIpg",  # Al Jazeera English
     "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH5d_FhUa3kPqmGkGg5b2g",    # WION
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHCEAZeUIeJs0IjQiqTCdVSIg"   # Yahoo Finance
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_gUM8rL-Lzy6ZRv9SvwGWA",  # ABC News
+
+    # Business & Finance
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHCEAZeUIeJs0IjQiqTCdVSIg",  # Yahoo Finance
+
+    # Tech & AI
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_AblbZPT4-o6DsZ09Oow",    # The Verge
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHTk06e98y_1hA_L9_z9z9g",  # CNET
+
+    # Entertainment & Gaming
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHKy1dAqELo0zrOtPkf0eTMw",  # IGN
+    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_7Pflbhz-SEGeG5C421A_Q"   # GameSpot
 ]
 
-# Helper function to convert any video into 100% Instagram-ready 9:16 Reel
 def convert_to_instagram_reel(input_file, output_file):
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    # Scales to 1080x1920 vertical with black padding if needed, enforces yuv420p and aac
+    try:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg_exe = "ffmpeg"
+
     cmd = [
         ffmpeg_exe, "-y",
         "-i", input_file,
@@ -61,7 +83,7 @@ def convert_to_instagram_reel(input_file, output_file):
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-# ================= 2. FETCH LATEST SHORT NEWS VIDEO =================
+# ================= 2. FETCH LATEST SHORT VIDEO =================
 def get_latest_news_short():
     posted_links = set()
     if os.path.exists(TRACKER_FILE):
@@ -70,7 +92,11 @@ def get_latest_news_short():
 
     raw_path = "raw_download.mp4"
     final_reel_path = "news_video.mp4"
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    
+    try:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg_exe = "ffmpeg"
 
     ydl_opts = {
         'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -85,7 +111,7 @@ def get_latest_news_short():
     for feed_url in YOUTUBE_SHORTS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:8]:
+            for entry in feed.entries[:20]:
                 video_url = entry.link
                 if video_url not in posted_links:
                     print(f"\nTargeting: {entry.title}\nURL: {video_url}")
@@ -100,7 +126,8 @@ def get_latest_news_short():
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([video_url])
-                    except Exception:
+                    except Exception as err:
+                        print(f"Download Error: {err}")
                         continue
 
                     if os.path.exists(raw_path) and os.path.getsize(raw_path) > 15000:
@@ -113,7 +140,7 @@ def get_latest_news_short():
                         title = entry.title
                         description = getattr(entry, "summary", title)
                         return title, description, video_url, final_reel_path
-        except Exception as e:
+        except Exception:
             continue
 
     return None, None, None, None
@@ -125,8 +152,8 @@ def generate_ai_caption(title, description):
     Context: {description}
     
     Task:
-    Create an engaging, viral social media news caption for this real news video.
-    Keep it crisp, factual, and add 4-5 relevant business/global hashtags.
+    Create an engaging, viral social media news caption for this video.
+    Keep it crisp, factual, and add 4-5 relevant hashtags.
     Return ONLY the final caption text.
     """
 
@@ -138,19 +165,23 @@ def generate_ai_caption(title, description):
 
     return chat_completion.choices[0].message.content.strip()
 
-# ================= 4. BUFFER GRAPHQL VIDEO PUBLISH =================
+# ================= 4. BUFFER PUBLISH =================
 def publish_to_buffer(video_path, caption):
     print("Uploading standardized Reel to Cloudinary...")
     upload_res = cloudinary.uploader.upload(
         video_path,
-        resource_type="video"
+        resource_type="video",
+        format="mp4"
     )
-    video_url = upload_res["secure_url"]
+    
+    video_url = upload_res.get("secure_url", "")
+    if not video_url.endswith(".mp4"):
+        video_url = video_url + ".mp4"
+
     print(f"Uploaded Video URL: {video_url}")
 
     graphql_url = "https://api.buffer.com"
-    clean_token = BUFFER_TOKEN.replace("Bearer ", "").strip() if BUFFER_TOKEN else ""
-
+    clean_token = BUFFER_TOKEN.replace("Bearer ", "").strip()
     headers = {
         "Authorization": f"Bearer {clean_token}",
         "Content-Type": "application/json"
@@ -172,7 +203,10 @@ def publish_to_buffer(video_path, caption):
     }
     """
 
-    for channel_id in CHANNEL_IDS:
+    for channel in CHANNELS:
+        channel_id = channel["id"]
+        channel_type = channel["type"]
+
         post_input = {
             "channelId": channel_id,
             "text": caption,
@@ -181,7 +215,7 @@ def publish_to_buffer(video_path, caption):
             "assets": [{"video": {"url": video_url}}]
         }
 
-        if channel_id == "6aa38c78cd8b9c702c4a94c0":
+        if channel_type == "instagram":
             post_input["metadata"] = {
                 "instagram": {
                     "type": "reel",
@@ -189,16 +223,20 @@ def publish_to_buffer(video_path, caption):
                 }
             }
 
-        response = requests.post(
-            graphql_url,
-            headers=headers,
-            json={"query": mutation, "variables": {"input": post_input}}
-        )
-        print(f"Buffer response for {channel_id}: HTTP {response.status_code} - {response.text}")
+        try:
+            response = requests.post(
+                graphql_url,
+                headers=headers,
+                json={"query": mutation, "variables": {"input": post_input}}
+            )
+            print(f"Buffer -> {channel_type.upper()} ({channel_id}): HTTP {response.status_code} - {response.text}")
+            time.sleep(3)
+        except Exception as e:
+            print(f"Request error on {channel_type}: {e}")
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    print("[1/3] Searching, downloading and standardizing News Reel...")
+    print("[1/3] Searching, downloading and standardizing Reel...")
     title, desc, url, video_file = get_latest_news_short()
 
     if video_file:
@@ -210,6 +248,6 @@ if __name__ == "__main__":
 
         print("[3/3] Uploading & publishing video to platforms...")
         publish_to_buffer(video_file, caption)
-        print("\nReal news video published successfully!")
+        print("\nAll platforms updated successfully!")
     else:
         print("Done. No new videos found in this cycle.")
