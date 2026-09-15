@@ -84,6 +84,7 @@ def convert_to_instagram_reel(input_file, output_file):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 # ================= 2. FETCH LATEST SHORT VIDEO =================
+# ================= 2. FETCH LATEST SHORT VIDEO =================
 def get_latest_news_short():
     posted_links = set()
     if os.path.exists(TRACKER_FILE):
@@ -108,9 +109,18 @@ def get_latest_news_short():
         'match_filter': yt_dlp.utils.match_filter_func("duration <= 90")
     }
 
+    # Browser headers taaki YouTube cloud runner IP ko block na kare
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     for feed_url in YOUTUBE_SHORTS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
+            resp = requests.get(feed_url, headers=req_headers, timeout=10)
+            if resp.status_code != 200:
+                continue
+            feed = feedparser.parse(resp.content)
+            
             for entry in feed.entries[:20]:
                 video_url = entry.link
                 if video_url not in posted_links:
@@ -140,7 +150,8 @@ def get_latest_news_short():
                         title = entry.title
                         description = getattr(entry, "summary", title)
                         return title, description, video_url, final_reel_path
-        except Exception:
+        except Exception as e:
+            print(f"Feed error on {feed_url}: {e}")
             continue
 
     return None, None, None, None
