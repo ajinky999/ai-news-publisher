@@ -33,33 +33,16 @@ cloudinary.config(
 client = Groq(api_key=GROQ_API_KEY)
 TRACKER_FILE = "posted_links.txt"
 
-# 16 Curated Feeds (Top Sports + Tech + Gaming + World & Finance)
-YOUTUBE_SHORTS_FEEDS = [
-    # Top 3 Sports
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHUC_qpnwG7B1W4s8T-mZ6lg",  # ESPN
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHtm_QoN2HKbe3S6FVNT7Qzg",  # Formula 1
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHUPi2Fz9b22z1Qv2d1n9wDg",  # Sky Sports Football
-
-    # Global Breaking News
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH16niRr50-MSBwiO3YDb3RA",  # BBC News
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHupvZG-5ko_eiXAupbDfxWw",  # CNN
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHknLrEdhRCp1aegoMqRaCZg",  # DW News
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH7fPtJkH31N4mE_yO8oIpg",  # Al Jazeera English
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH5d_FhUa3kPqmGkGg5b2g",    # WION
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_gUM8rL-Lzy6ZRv9SvwGWA",  # ABC News
-
-    # Business & Finance
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHvJJ_JLWvmy5_VqqmB65mDg",  # CNBC
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHhirEOpgFCupSTNZv4665YA",  # Bloomberg
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHCEAZeUIeJs0IjQiqTCdVSIg",  # Yahoo Finance
-
-    # Tech & AI
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_AblbZPT4-o6DsZ09Oow",    # The Verge
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHTk06e98y_1hA_L9_z9z9g",  # CNET
-
-    # Entertainment & Gaming
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSHKy1dAqELo0zrOtPkf0eTMw",  # IGN
-    "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_7Pflbhz-SEGeG5C421A_Q"   # GameSpot
+# Cloud-friendly feeds (Direct fallback lists)
+YOUTUBE_CHANNELS = [
+    "BBCNews",
+    "CNN",
+    "DWNews",
+    "SkySportsNews",
+    "ESPN",
+    "CNBC",
+    "TheVerge",
+    "IGN"
 ]
 
 def convert_to_instagram_reel(input_file, output_file):
@@ -83,8 +66,7 @@ def convert_to_instagram_reel(input_file, output_file):
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-# ================= 2. FETCH LATEST SHORT VIDEO =================
-# ================= 2. FETCH LATEST SHORT VIDEO =================
+# ================= 2. FETCH SHORTS VIA YT-DLP SEARCH =================
 def get_latest_news_short():
     posted_links = set()
     if os.path.exists(TRACKER_FILE):
@@ -99,6 +81,7 @@ def get_latest_news_short():
     except Exception:
         ffmpeg_exe = "ffmpeg"
 
+    # Direct search via yt-dlp jo RSS block bypass karta hai
     ydl_opts = {
         'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': raw_path,
@@ -106,52 +89,44 @@ def get_latest_news_short():
         'merge_output_format': 'mp4',
         'quiet': True,
         'noplaylist': True,
-        'match_filter': yt_dlp.utils.match_filter_func("duration <= 90")
+        'match_filter': yt_dlp.utils.match_filter_func("duration <= 90"),
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
-    # Browser headers taaki YouTube cloud runner IP ko block na kare
-    req_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    for feed_url in YOUTUBE_SHORTS_FEEDS:
+    for ch in YOUTUBE_CHANNELS:
+        search_query = f"ytsearch5:{ch} shorts news"
         try:
-            resp = requests.get(feed_url, headers=req_headers, timeout=10)
-            if resp.status_code != 200:
-                continue
-            feed = feedparser.parse(resp.content)
-            
-            for entry in feed.entries[:20]:
-                video_url = entry.link
-                if video_url not in posted_links:
-                    print(f"\nTargeting: {entry.title}\nURL: {video_url}")
-
-                    for f in [raw_path, final_reel_path]:
-                        if os.path.exists(f):
-                            try:
-                                os.remove(f)
-                            except Exception:
-                                pass
-
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            ydl.download([video_url])
-                    except Exception as err:
-                        print(f"Download Error: {err}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(search_query, download=False)
+                entries = info.get('entries', [])
+                for entry in entries:
+                    if not entry:
                         continue
+                    video_url = entry.get('webpage_url', f"https://www.youtube.com/watch?v={entry.get('id')}")
+                    if video_url not in posted_links:
+                        print(f"\nTargeting: {entry.get('title')}\nURL: {video_url}")
 
-                    if os.path.exists(raw_path) and os.path.getsize(raw_path) > 15000:
-                        print("Converting video to standard Instagram 9:16 vertical Reel...")
-                        convert_to_instagram_reel(raw_path, final_reel_path)
-                        
-                        with open(TRACKER_FILE, "a", encoding="utf-8") as f:
-                            f.write(video_url + "\n")
+                        for f in [raw_path, final_reel_path]:
+                            if os.path.exists(f):
+                                try:
+                                    os.remove(f)
+                                except Exception:
+                                    pass
 
-                        title = entry.title
-                        description = getattr(entry, "summary", title)
-                        return title, description, video_url, final_reel_path
+                        ydl.download([video_url])
+
+                        if os.path.exists(raw_path) and os.path.getsize(raw_path) > 15000:
+                            print("Converting video to standard Instagram 9:16 vertical Reel...")
+                            convert_to_instagram_reel(raw_path, final_reel_path)
+
+                            with open(TRACKER_FILE, "a", encoding="utf-8") as f:
+                                f.write(video_url + "\n")
+
+                            title = entry.get('title', 'Breaking News')
+                            desc = entry.get('description', title)
+                            return title, desc, video_url, final_reel_path
         except Exception as e:
-            print(f"Feed error on {feed_url}: {e}")
+            print(f"Error fetching channel {ch}: {e}")
             continue
 
     return None, None, None, None
@@ -160,7 +135,7 @@ def get_latest_news_short():
 def generate_ai_caption(title, description):
     prompt = f"""
     Title: {title}
-    Context: {description}
+    Context: {description[:500] if description else title}
     
     Task:
     Create an engaging, viral social media news caption for this video.
@@ -184,7 +159,6 @@ def publish_to_buffer(video_path, caption):
         resource_type="video",
         format="mp4"
     )
-    
     video_url = upload_res.get("secure_url", "")
     if not video_url.endswith(".mp4"):
         video_url = video_url + ".mp4"
